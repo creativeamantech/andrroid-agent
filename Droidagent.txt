@@ -1,0 +1,1643 @@
+markdown
+
+# 🤖 DROID-AGENT — Autonomous Android AI Agent
+### Complete Build Specification for Google Jules
+**Package:** `com.mahavtaar.droidagent`
+**Version Target:** 1.0.0
+**Min SDK:** 28 (Android 9) | **Target SDK:** 35 (Android 15)
+**Language:** Kotlin + Jetpack Compose
+**Architecture:** MVVM + Clean Architecture + ReAct Agent Loop
+
+---
+
+## 📌 PROJECT OVERVIEW
+
+Build a fully autonomous Android Agent app called **DroidAgent** that:
+
+- Runs **on-device LLMs** (Gemma 4 E2B/E4B via LiteRT-LM) with **zero cloud dependency** for core reasoning
+- Controls the Android device autonomously via **AccessibilityService** (tap, scroll, type, swipe, launch apps, read screen content)
+- Uses a **ReAct (Reasoning + Acting) loop** where the model thinks → decides → acts → observes → repeats
+- Has a **modular Skill system** (identical in spirit to Google AI Edge Gallery's Agent Skills) — skills are JSON/Markdown packages that give the agent new capabilities
+- **Learns and adapts** over time using an on-device **experience memory** (RAG with SQLite vector store)
+- Supports **dual-mode inference**: on-device (LiteRT-LM / Ollama local) + optional cloud fallback (Gemini API)
+- Has a **dark, futuristic UI** inspired by Linear and sci-fi terminal aesthetics
+
+This is the most capable open-source autonomous Android agent ever built. No limits.
+
+---
+
+## 🗂️ PROJECT STRUCTURE
+
+```
+com.mahavtaar.droidagent/
+├── app/
+│   ├── src/main/
+│   │   ├── java/com/mahavtaar/droidagent/
+│   │   │   ├── MainActivity.kt
+│   │   │   ├── DroidAgentApp.kt                    # Application class
+│   │   │   │
+│   │   │   ├── core/
+│   │   │   │   ├── agent/
+│   │   │   │   │   ├── AgentOrchestrator.kt        # Main ReAct loop controller
+│   │   │   │   │   ├── AgentState.kt               # Sealed class: Idle/Thinking/Acting/Observing/Done/Error
+│   │   │   │   │   ├── AgentMemory.kt              # Short-term + long-term memory manager
+│   │   │   │   │   ├── AgentPlanner.kt             # Breaks complex goals into sub-tasks
+│   │   │   │   │   └── AgentLogger.kt              # Structured action/thought logs
+│   │   │   │   │
+│   │   │   │   ├── llm/
+│   │   │   │   │   ├── LLMEngine.kt                # Interface for all inference backends
+│   │   │   │   │   ├── LiteRTEngine.kt             # LiteRT-LM (Gemma 4 on-device)
+│   │   │   │   │   ├── OllamaEngine.kt             # Ollama local server engine
+│   │   │   │   │   ├── GeminiEngine.kt             # Cloud fallback (Gemini API)
+│   │   │   │   │   ├── EngineRouter.kt             # Auto-selects best available engine
+│   │   │   │   │   └── TokenStreamHandler.kt       # Handles streaming tokens from any engine
+│   │   │   │   │
+│   │   │   │   ├── tools/
+│   │   │   │   │   ├── ToolRegistry.kt             # Central registry of all agent tools
+│   │   │   │   │   ├── ToolAnnotations.kt          # @Tool, @ToolParam annotations
+│   │   │   │   │   ├── ToolResult.kt               # Sealed: Success/Failure/NeedsPermission
+│   │   │   │   │   ├── ToolExecutor.kt             # Parses LLM JSON → executes tool → returns result
+│   │   │   │   │   └── impl/
+│   │   │   │   │       ├── AccessibilityTool.kt    # Tap, swipe, type, read screen
+│   │   │   │   │       ├── AppLauncherTool.kt      # Launch/close apps by name or package
+│   │   │   │   │       ├── FileTool.kt             # Read/write files, list directories
+│   │   │   │   │       ├── ClipboardTool.kt        # Read/write clipboard
+│   │   │   │   │       ├── NotificationTool.kt     # Read notifications
+│   │   │   │   │       ├── ContactsTool.kt         # Read contacts
+│   │   │   │   │       ├── CalendarTool.kt         # Read/create events
+│   │   │   │   │       ├── WebSearchTool.kt        # Search via DuckDuckGo API
+│   │   │   │   │       ├── ScreenCaptureTool.kt    # Screenshot + OCR (ML Kit)
+│   │   │   │   │       ├── ShellTool.kt            # Rooted: execute shell commands
+│   │   │   │   │       ├── SmsTool.kt              # Read SMS (with permission)
+│   │   │   │   │       └── SystemSettingsTool.kt   # WiFi, brightness, volume, etc.
+│   │   │   │   │
+│   │   │   │   ├── accessibility/
+│   │   │   │   │   ├── DroidAccessibilityService.kt  # Core accessibility service
+│   │   │   │   │   ├── UITreeParser.kt               # Parses accessibility node tree → JSON
+│   │   │   │   │   ├── GestureEngine.kt              # Programmatic tap, swipe, scroll, pinch
+│   │   │   │   │   ├── ScreenReader.kt               # Extracts visible text from screen
+│   │   │   │   │   └── ActionDispatcher.kt           # Queues and dispatches UI actions safely
+│   │   │   │   │
+│   │   │   │   ├── skills/
+│   │   │   │   │   ├── SkillManager.kt             # Load, activate, deactivate skills
+│   │   │   │   │   ├── SkillLoader.kt              # Load from: local file / URL / built-in
+│   │   │   │   │   ├── SkillExecutor.kt            # Runs JS skills in WebView sandbox
+│   │   │   │   │   ├── SkillParser.kt              # Parses SKILL.md spec format
+│   │   │   │   │   └── builtin/
+│   │   │   │   │       ├── WikipediaSkill.kt
+│   │   │   │   │       ├── CalculatorSkill.kt
+│   │   │   │   │       ├── TranslatorSkill.kt
+│   │   │   │   │       ├── WeatherSkill.kt
+│   │   │   │   │       ├── ReminderSkill.kt
+│   │   │   │   │       └── WhatsAppSkill.kt        # Read/send WhatsApp messages via a11y
+│   │   │   │   │
+│   │   │   │   ├── memory/
+│   │   │   │   │   ├── MemoryStore.kt              # SQLite-backed vector memory (Room)
+│   │   │   │   │   ├── EmbeddingEngine.kt          # On-device text embeddings (USE/MiniLM)
+│   │   │   │   │   ├── MemoryRetriever.kt          # cosine similarity RAG retrieval
+│   │   │   │   │   ├── ExperienceLogger.kt         # Logs every agent action + outcome
+│   │   │   │   │   └── LearningEngine.kt           # Derives patterns, updates strategy weights
+│   │   │   │   │
+│   │   │   │   └── model/
+│   │   │   │       ├── ModelManager.kt             # Download, verify, load LiteRT models
+│   │   │   │       ├── ModelDownloader.kt          # Downloads from HuggingFace
+│   │   │   │       ├── ModelBenchmark.kt           # Measures tokens/sec on device
+│   │   │   │       └── ModelRegistry.kt            # Catalog of supported models + metadata
+│   │   │   │
+│   │   │   ├── ui/
+│   │   │   │   ├── theme/
+│   │   │   │   │   ├── Theme.kt                    # Dark sci-fi color system
+│   │   │   │   │   ├── Typography.kt               # JetBrains Mono + Inter fonts
+│   │   │   │   │   └── Colors.kt
+│   │   │   │   │
+│   │   │   │   ├── screens/
+│   │   │   │   │   ├── home/
+│   │   │   │   │   │   ├── HomeScreen.kt           # Mission control dashboard
+│   │   │   │   │   │   └── HomeViewModel.kt
+│   │   │   │   │   ├── agent/
+│   │   │   │   │   │   ├── AgentScreen.kt          # Live agent execution view
+│   │   │   │   │   │   ├── AgentViewModel.kt
+│   │   │   │   │   │   ├── ThoughtBubbleCard.kt    # Shows agent's reasoning
+│   │   │   │   │   │   └── ActionLogList.kt        # Scrollable action history
+│   │   │   │   │   ├── chat/
+│   │   │   │   │   │   ├── ChatScreen.kt           # Direct LLM chat with tool access
+│   │   │   │   │   │   └── ChatViewModel.kt
+│   │   │   │   │   ├── skills/
+│   │   │   │   │   │   ├── SkillsScreen.kt         # Browse/manage skills marketplace
+│   │   │   │   │   │   └── SkillsViewModel.kt
+│   │   │   │   │   ├── memory/
+│   │   │   │   │   │   ├── MemoryScreen.kt         # View agent's learned memories
+│   │   │   │   │   │   └── MemoryViewModel.kt
+│   │   │   │   │   ├── models/
+│   │   │   │   │   │   ├── ModelsScreen.kt         # Model manager: download/benchmark
+│   │   │   │   │   │   └── ModelsViewModel.kt
+│   │   │   │   │   └── settings/
+│   │   │   │   │       ├── SettingsScreen.kt
+│   │   │   │   │       └── SettingsViewModel.kt
+│   │   │   │   │
+│   │   │   │   └── components/
+│   │   │   │       ├── GlowingButton.kt
+│   │   │   │       ├── HolographicCard.kt
+│   │   │   │       ├── PulsingStatusDot.kt
+│   │   │   │       ├── StreamingTextDisplay.kt     # Typewriter effect for LLM output
+│   │   │   │       ├── CircularAgentAvatar.kt      # Animated agent state indicator
+│   │   │   │       ├── SkillChip.kt
+│   │   │   │       └── ModelBadge.kt
+│   │   │   │
+│   │   │   ├── data/
+│   │   │   │   ├── db/
+│   │   │   │   │   ├── AgentDatabase.kt            # Room database
+│   │   │   │   │   ├── entities/
+│   │   │   │   │   │   ├── MemoryEntity.kt
+│   │   │   │   │   │   ├── SessionEntity.kt
+│   │   │   │   │   │   ├── SkillEntity.kt
+│   │   │   │   │   │   └── ActionLogEntity.kt
+│   │   │   │   │   └── dao/
+│   │   │   │   │       ├── MemoryDao.kt
+│   │   │   │   │       ├── SessionDao.kt
+│   │   │   │   │       └── ActionLogDao.kt
+│   │   │   │   ├── prefs/
+│   │   │   │   │   └── AgentPreferences.kt         # DataStore preferences
+│   │   │   │   └── repository/
+│   │   │   │       ├── AgentRepository.kt
+│   │   │   │       ├── MemoryRepository.kt
+│   │   │   │       ├── ModelRepository.kt
+│   │   │   │       └── SkillRepository.kt
+│   │   │   │
+│   │   │   └── di/
+│   │   │       ├── AppModule.kt                    # Hilt DI modules
+│   │   │       ├── LLMModule.kt
+│   │   │       ├── DatabaseModule.kt
+│   │   │       └── AgentModule.kt
+│   │   │
+│   │   ├── res/
+│   │   │   ├── raw/
+│   │   │   │   ├── system_prompt.txt               # Base agent system prompt
+│   │   │   │   ├── react_template.txt              # ReAct reasoning template
+│   │   │   │   └── tool_schemas.json               # All tool JSON schemas
+│   │   │   └── xml/
+│   │   │       └── accessibility_service_config.xml
+│   │   │
+│   │   └── AndroidManifest.xml
+│   │
+│   └── build.gradle.kts
+│
+├── build.gradle.kts
+├── settings.gradle.kts
+└── gradle/libs.versions.toml
+```
+
+---
+
+## ⚙️ DEPENDENCIES (libs.versions.toml)
+
+```toml
+[versions]
+kotlin = "2.0.21"
+agp = "8.7.3"
+compose-bom = "2024.12.01"
+hilt = "2.52"
+room = "2.7.0"
+litert = "1.0.0"
+litert-lm = "0.1.0-beta"
+mediapipe = "0.10.22"
+mlkit-text = "16.0.1"
+retrofit = "2.11.0"
+okhttp = "4.12.0"
+coroutines = "1.9.0"
+datastore = "1.1.2"
+navigation = "2.8.5"
+coil = "2.7.0"
+ktor = "2.3.12"
+lottie = "6.6.2"
+jsoup = "1.18.3"
+moshi = "1.15.1"
+
+[libraries]
+# Compose
+compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "compose-bom" }
+compose-ui = { group = "androidx.compose.ui", name = "ui" }
+compose-ui-graphics = { group = "androidx.compose.ui", name = "ui-graphics" }
+compose-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
+compose-material3 = { group = "androidx.compose.material3", name = "material3" }
+compose-icons-extended = { group = "androidx.compose.material", name = "material-icons-extended" }
+compose-animation = { group = "androidx.compose.animation", name = "animation" }
+activity-compose = { group = "androidx.activity", name = "activity-compose", version = "1.9.3" }
+
+# Navigation
+navigation-compose = { group = "androidx.navigation", name = "navigation-compose", version.ref = "navigation" }
+hilt-navigation-compose = { group = "androidx.hilt", name = "hilt-navigation-compose", version = "1.2.0" }
+
+# Hilt DI
+hilt-android = { group = "com.google.dagger", name = "hilt-android", version.ref = "hilt" }
+hilt-compiler = { group = "com.google.dagger", name = "hilt-android-compiler", version.ref = "hilt" }
+
+# Room
+room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
+room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }
+room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
+
+# LiteRT / LiteRT-LM (on-device LLM)
+litert-lm = { group = "com.google.ai.edge.litert", name = "litert-lm", version.ref = "litert-lm" }
+litert-gpu = { group = "com.google.ai.edge.litert", name = "litert-gpu", version.ref = "litert" }
+litert-support = { group = "com.google.ai.edge.litert", name = "litert-support-api", version = "0.1.0" }
+
+# MediaPipe Tasks (for embeddings, OCR)
+mediapipe-tasks-text = { group = "com.google.mediapipe", name = "tasks-text", version.ref = "mediapipe" }
+mediapipe-tasks-vision = { group = "com.google.mediapipe", name = "tasks-vision", version.ref = "mediapipe" }
+
+# ML Kit
+mlkit-textrecognition = { group = "com.google.mlkit", name = "text-recognition", version.ref = "mlkit-text" }
+
+# Networking
+retrofit = { group = "com.squareup.retrofit2", name = "retrofit", version.ref = "retrofit" }
+retrofit-moshi = { group = "com.squareup.retrofit2", name = "converter-moshi", version.ref = "retrofit" }
+okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
+okhttp-logging = { group = "com.squareup.okhttp3", name = "logging-interceptor", version.ref = "okhttp" }
+moshi = { group = "com.squareup.moshi", name = "moshi-kotlin", version.ref = "moshi" }
+moshi-codegen = { group = "com.squareup.moshi", name = "moshi-kotlin-codegen", version.ref = "moshi" }
+ktor-client-android = { group = "io.ktor", name = "ktor-client-android", version.ref = "ktor" }
+ktor-client-content-negotiation = { group = "io.ktor", name = "ktor-client-content-negotiation", version.ref = "ktor" }
+ktor-serialization-json = { group = "io.ktor", name = "ktor-serialization-kotlinx-json", version.ref = "ktor" }
+
+# Coroutines
+coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
+
+# DataStore
+datastore = { group = "androidx.datastore", name = "datastore-preferences", version.ref = "datastore" }
+
+# Image loading
+coil = { group = "io.coil-kt", name = "coil-compose", version.ref = "coil" }
+
+# Lottie animations
+lottie = { group = "com.airbnb.android", name = "lottie-compose", version.ref = "lottie" }
+
+# HTML parsing for web skill
+jsoup = { group = "org.jsoup", name = "jsoup", version.ref = "jsoup" }
+
+# Lifecycle
+lifecycle-viewmodel-compose = { group = "androidx.lifecycle", name = "lifecycle-viewmodel-compose", version = "2.8.7" }
+lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version = "2.8.7" }
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+hilt = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
+ksp = { id = "com.google.devtools.ksp", version = "2.0.21-1.0.28" }
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+```
+
+---
+
+## 📜 AndroidManifest.xml
+
+```xml
+
+
+
+    
+    
+    
+    
+    
+    
+
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+
+    
+
+        
+            
+                
+                
+            
+        
+
+        
+        
+            
+                
+            
+            
+        
+
+        
+        
+
+    
+
+```
+
+---
+
+## 🧠 CORE AGENT ARCHITECTURE
+
+### 1. ReAct Agent Loop — `AgentOrchestrator.kt`
+
+```kotlin
+/**
+ * The core ReAct (Reason + Act) agent loop.
+ *
+ * FLOW:
+ *   User Goal
+ *      ↓
+ *   [THINK] LLM generates thought + action JSON
+ *      ↓
+ *   [ACT] ToolExecutor runs the action on device
+ *      ↓
+ *   [OBSERVE] Result is fed back to LLM as observation
+ *      ↓
+ *   [REPEAT] Until goal is achieved or max steps reached
+ *
+ * Each step is:
+ *   1. Build context: system prompt + memories + conversation + available tools
+ *   2. Stream LLM output
+ *   3. Parse  and  XML blocks from output
+ *   4. Execute action via ToolExecutor
+ *   5. Append  to context
+ *   6. Log step to ExperienceLogger
+ *   7. Check if  block found → stop
+ */
+@HiltViewModel
+class AgentOrchestrator @Inject constructor(
+    private val llmEngine: LLMEngine,
+    private val toolExecutor: ToolExecutor,
+    private val memoryRetriever: MemoryRetriever,
+    private val experienceLogger: ExperienceLogger,
+    private val skillManager: SkillManager,
+    private val agentPlanner: AgentPlanner
+) {
+    // Emit steps as StateFlow for UI observation
+    private val _agentState = MutableStateFlow(AgentState.Idle)
+    val agentState: StateFlow = _agentState.asStateFlow()
+
+    private val _steps = MutableStateFlow<List>(emptyList())
+    val steps: StateFlow<List> = _steps.asStateFlow()
+
+    suspend fun executeGoal(goal: String, maxSteps: Int = 20) {
+        val sessionId = UUID.randomUUID().toString()
+        val conversation = mutableListOf()
+
+        // Retrieve relevant memories
+        val memories = memoryRetriever.retrieve(goal, topK = 5)
+
+        // Build system prompt with tools + skills + memories
+        val systemPrompt = buildSystemPrompt(memories)
+
+        // Plan complex goals into subtasks
+        val plan = agentPlanner.plan(goal)
+
+        conversation.add(Message.User(buildGoalMessage(goal, plan)))
+
+        var stepCount = 0
+        var isComplete = false
+
+        _agentState.emit(AgentState.Thinking)
+
+        while (!isComplete && stepCount < maxSteps) {
+            stepCount++
+
+            // Stream LLM response
+            val rawOutput = StringBuilder()
+            llmEngine.stream(
+                systemPrompt = systemPrompt,
+                messages = conversation
+            ).collect { token -> rawOutput.append(token) }
+
+            val output = rawOutput.toString()
+
+            // Parse thought, action, final_answer
+            val thought = extractBlock(output, "thought")
+            val actionJson = extractBlock(output, "action")
+            val finalAnswer = extractBlock(output, "final_answer")
+
+            if (finalAnswer != null) {
+                _agentState.emit(AgentState.Done(finalAnswer))
+                experienceLogger.logSuccess(sessionId, goal, steps.value)
+                isComplete = true
+                break
+            }
+
+            // Emit thinking step
+            val step = AgentStep.Thinking(thought ?: "Processing...")
+            addStep(step)
+            _agentState.emit(AgentState.Thinking)
+
+            // Execute action
+            if (actionJson != null) {
+                _agentState.emit(AgentState.Acting)
+                val toolResult = toolExecutor.execute(actionJson)
+                val observation = toolResult.toObservation()
+
+                // Add to conversation
+                conversation.add(Message.Assistant(output))
+                conversation.add(Message.User("\n$observation\n"))
+
+                addStep(AgentStep.Action(actionJson, observation, toolResult.success))
+
+                // Log experience for learning
+                experienceLogger.logStep(sessionId, thought, actionJson, observation)
+            } else {
+                // No action parsed — LLM is confused, nudge it
+                conversation.add(Message.Assistant(output))
+                conversation.add(Message.User("Please provide a valid  JSON block."))
+            }
+        }
+
+        if (!isComplete) {
+            _agentState.emit(AgentState.Error("Max steps reached without completing goal."))
+        }
+    }
+
+    private fun buildSystemPrompt(memories: List): String { /* see below */ }
+}
+```
+
+### 2. System Prompt Template — `res/raw/system_prompt.txt`
+
+```
+You are DroidAgent, an autonomous AI agent running entirely on an Android device.
+Your purpose is to help the user accomplish any task on their phone or with information.
+
+## YOUR CAPABILITIES
+You have access to a set of tools that let you:
+- Control the device screen (tap, scroll, swipe, type text)
+- Read what is currently visible on screen
+- Launch apps, take screenshots
+- Search the web, read files, send messages
+- Set reminders, check calendar, access contacts
+- And more via loadable Skills
+
+## REASONING FORMAT
+Always respond in this exact format:
+
+<thought>
+[Your step-by-step reasoning about what to do next]
+</thought>
+
+<action>
+{
+  "tool": "tool_name",
+  "params": {
+    "param1": "value1"
+  }
+}
+</action>
+
+When the task is complete, respond with:
+
+<final_answer>
+[Your summary of what was accomplished]
+</final_answer>
+
+## AVAILABLE TOOLS
+{{TOOL_SCHEMAS}}
+
+## ACTIVE SKILLS
+{{ACTIVE_SKILLS}}
+
+## RELEVANT MEMORIES FROM PAST EXPERIENCE
+{{MEMORIES}}
+
+## RULES
+1. Always think before acting
+2. Read the screen after every UI action to observe the result
+3. If an action fails, try a different approach
+4. Ask for clarification ONLY if absolutely necessary
+5. Prefer on-device actions. Use web search only when local data is insufficient
+6. Never perform destructive actions (delete, format, uninstall) without explicit user confirmation
+7. Be efficient — combine steps where possible
+```
+
+---
+
+## 🛠️ TOOL SYSTEM
+
+### Tool Annotation System — `ToolAnnotations.kt`
+
+```kotlin
+@Target(AnnotationTarget.CLASS)
+@Retention(AnnotationRetention.RUNTIME)
+annotation class Tool(
+    val name: String,
+    val description: String,
+    val requiresPermission: String = ""
+)
+
+@Target(AnnotationTarget.VALUE_PARAMETER)
+@Retention(AnnotationRetention.RUNTIME)
+annotation class ToolParam(
+    val name: String,
+    val description: String,
+    val required: Boolean = true,
+    val type: String = "string"
+)
+```
+
+### Tool Registry — `ToolRegistry.kt`
+
+```kotlin
+/**
+ * Scans all @Tool annotated classes and builds JSON schema for LLM.
+ * Registered tools are available to the agent at runtime.
+ */
+@Singleton
+class ToolRegistry @Inject constructor() {
+    private val tools = mutableMapOf()
+
+    fun register(tool: BaseTool) {
+        val annotation = tool::class.annotations.filterIsInstance().first()
+        tools[annotation.name] = ToolDefinition(
+            name = annotation.name,
+            description = annotation.description,
+            parameters = extractParams(tool),
+            executor = tool
+        )
+    }
+
+    fun getSchema(): String = buildJsonSchema(tools.values)
+    fun getTool(name: String): BaseTool? = tools[name]?.executor
+}
+```
+
+### Accessibility Tool — `AccessibilityTool.kt`
+
+```kotlin
+@Tool(
+    name = "device_control",
+    description = "Control the Android screen — tap UI elements, type text, swipe, scroll, press hardware buttons, and read current screen content."
+)
+class AccessibilityTool @Inject constructor(
+    private val gestureEngine: GestureEngine,
+    private val screenReader: ScreenReader,
+    private val uiTreeParser: UITreeParser
+) : BaseTool() {
+
+    // Supported actions:
+    // tap(x, y) — tap screen coordinates
+    // tap_text(text) — find and tap element containing this text
+    // type(text) — type text at current focused field
+    // swipe(startX, startY, endX, endY, duration)
+    // scroll(direction: up/down/left/right, amount)
+    // press_back() — press Android back button
+    // press_home() — press home button
+    // press_recent() — open recents
+    // read_screen() — returns full text content of current screen
+    // get_ui_tree() — returns accessibility node tree as JSON
+    // long_press(x, y)
+    // pinch_in(x, y) / pinch_out(x, y)
+
+    override suspend fun execute(params: Map): ToolResult {
+        return when (params["action"] as String) {
+            "tap" -> handleTap(params)
+            "tap_text" -> handleTapText(params)
+            "type" -> handleType(params)
+            "swipe" -> handleSwipe(params)
+            "scroll" -> handleScroll(params)
+            "press_back" -> gestureEngine.pressBack()
+            "press_home" -> gestureEngine.pressHome()
+            "read_screen" -> ToolResult.Success(screenReader.readCurrentScreen())
+            "get_ui_tree" -> ToolResult.Success(uiTreeParser.getAsJson())
+            else -> ToolResult.Failure("Unknown action")
+        }
+    }
+}
+```
+
+### App Launcher Tool — `AppLauncherTool.kt`
+
+```kotlin
+@Tool(
+    name = "app_launcher",
+    description = "Launch, switch to, or close Android apps by name or package. Also list installed apps."
+)
+class AppLauncherTool @Inject constructor(
+    private val context: Context
+) : BaseTool() {
+    // Actions: launch(app_name/package), close(package), list_apps(), current_app()
+}
+```
+
+### Screen Capture + OCR Tool — `ScreenCaptureTool.kt`
+
+```kotlin
+@Tool(
+    name = "screen_capture",
+    description = "Take a screenshot and optionally extract all text from it using OCR. Use to understand visual content the accessibility tree might miss."
+)
+class ScreenCaptureTool @Inject constructor(
+    private val mlKitTextRecognizer: TextRecognizer
+) : BaseTool() {
+    // Captures screenshot → runs ML Kit OCR → returns text + bounding boxes
+    // Also supports: identify_ui_elements() using vision model
+}
+```
+
+---
+
+## 🔌 LLM ENGINE SYSTEM
+
+### LLMEngine Interface — `LLMEngine.kt`
+
+```kotlin
+interface LLMEngine {
+    val name: String
+    val isAvailable: Boolean
+    val maxContextTokens: Int
+
+    fun stream(
+        systemPrompt: String,
+        messages: List,
+        temperature: Float = 0.7f,
+        topK: Int = 40,
+        topP: Float = 0.9f
+    ): Flow
+
+    suspend fun generate(
+        systemPrompt: String,
+        messages: List,
+        maxTokens: Int = 2048
+    ): String
+
+    suspend fun getEmbedding(text: String): FloatArray
+}
+```
+
+### LiteRT Engine — `LiteRTEngine.kt`
+
+```kotlin
+/**
+ * Uses Google's LiteRT-LM SDK for fully offline Gemma 4 inference.
+ * Models: gemma-4-e2b-it-litert-preview (2B), gemma-4-e4b-it-litert-preview (4B)
+ *
+ * Supports:
+ * - Streaming token generation
+ * - GPU/NPU acceleration where available
+ * - Function calling format compatible with Gemma 4
+ * - < 1.5 GB RAM with 4-bit quantization
+ */
+@Singleton
+class LiteRTEngine @Inject constructor(
+    private val context: Context,
+    private val prefs: AgentPreferences
+) : LLMEngine {
+
+    private var session: LlmInference? = null
+
+    override val name = "LiteRT-LM (On-Device)"
+    override val isAvailable get() = session != null
+    override val maxContextTokens = 8192
+
+    suspend fun loadModel(modelPath: String) = withContext(Dispatchers.IO) {
+        val options = LlmInference.LlmInferenceOptions.builder()
+            .setModelPath(modelPath)
+            .setMaxTokens(maxContextTokens)
+            .setTopK(40)
+            .setTemperature(0.7f)
+            .setRandomSeed(42)
+            .build()
+        session = LlmInference.createFromOptions(context, options)
+    }
+
+    override fun stream(
+        systemPrompt: String,
+        messages: List,
+        temperature: Float,
+        topK: Int,
+        topP: Float
+    ): Flow = callbackFlow {
+        val prompt = buildGemmaPrompt(systemPrompt, messages)
+        session?.generateResponseAsync(prompt) { partialResult, done ->
+            trySend(partialResult ?: "")
+            if (done) close()
+        } ?: close(Exception("Model not loaded"))
+        awaitClose()
+    }
+
+    private fun buildGemmaPrompt(system: String, messages: List): String {
+        // Gemma 4 instruction format:
+        // user\n{system}\n\n{user_message}\n
+        // model\n
+        val sb = StringBuilder()
+        sb.append("user\n")
+        sb.append(system)
+        sb.append("\n\n")
+        messages.forEachIndexed { i, msg ->
+            when (msg) {
+                is Message.User -> {
+                    if (i > 0) sb.append("user\n")
+                    sb.append(msg.content)
+                    sb.append("\nmodel\n")
+                }
+                is Message.Assistant -> {
+                    sb.append(msg.content)
+                    sb.append("\n")
+                }
+            }
+        }
+        return sb.toString()
+    }
+}
+```
+
+### Ollama Engine — `OllamaEngine.kt`
+
+```kotlin
+/**
+ * Connects to local Ollama server (default: http://192.168.x.x:11434)
+ * Supports any model available on the local server: llama3.2, mistral, phi4, etc.
+ * Uses Ollama's /api/chat streaming endpoint.
+ */
+@Singleton
+class OllamaEngine @Inject constructor(
+    private val httpClient: HttpClient,
+    private val prefs: AgentPreferences
+) : LLMEngine {
+    override val name = "Ollama (Local Network)"
+    private val baseUrl get() = prefs.ollamaUrl
+
+    override fun stream(
+        systemPrompt: String,
+        messages: List,
+        temperature: Float,
+        topK: Int,
+        topP: Float
+    ): Flow = flow {
+        val response = httpClient.post("$baseUrl/api/chat") {
+            contentType(ContentType.Application.Json)
+            setBody(OllamaChatRequest(
+                model = prefs.ollamaModel,
+                messages = buildOllamaMessages(systemPrompt, messages),
+                stream = true,
+                options = OllamaOptions(temperature = temperature, top_k = topK, top_p = topP)
+            ))
+        }
+        response.bodyAsChannel().let { channel ->
+            while (!channel.isClosedForRead) {
+                val line = channel.readUTF8Line() ?: break
+                val chunk = Json.decodeFromString(line)
+                emit(chunk.message.content)
+                if (chunk.done) break
+            }
+        }
+    }
+}
+```
+
+### Engine Router — `EngineRouter.kt`
+
+```kotlin
+/**
+ * Automatically selects the best available inference engine.
+ *
+ * Priority:
+ * 1. LiteRT-LM (on-device, offline, fastest for small tasks)
+ * 2. Ollama (local network, larger models, more capable)
+ * 3. Gemini API (cloud fallback, maximum capability, requires internet)
+ *
+ * Falls back automatically if primary engine fails.
+ */
+@Singleton
+class EngineRouter @Inject constructor(
+    private val litert: LiteRTEngine,
+    private val ollama: OllamaEngine,
+    private val gemini: GeminiEngine,
+    private val prefs: AgentPreferences
+) : LLMEngine {
+
+    private val preferred get() = when (prefs.preferredEngine) {
+        "litert" -> litert
+        "ollama" -> ollama
+        "gemini" -> gemini
+        else -> selectBest()
+    }
+
+    private fun selectBest(): LLMEngine {
+        if (litert.isAvailable) return litert
+        if (ollama.isAvailable) return ollama
+        return gemini
+    }
+
+    override fun stream(systemPrompt: String, messages: List, temperature: Float, topK: Int, topP: Float): Flow =
+        preferred.stream(systemPrompt, messages, temperature, topK, topP)
+}
+```
+
+---
+
+## 🧩 SKILL SYSTEM
+
+### Skill Specification Format — `SKILL.md` (template)
+
+Every skill is defined by a markdown file:
+
+```markdown
+---
+name: wikipedia_lookup
+version: 1.0.0
+author: DroidAgent Core
+description: Search and retrieve summaries from Wikipedia
+trigger_keywords: [wikipedia, wiki, search, who is, what is, history of]
+execution: javascript
+permissions: []
+---
+
+## Overview
+This skill allows the agent to query Wikipedia for factual information.
+
+## JavaScript Implementation
+```js
+async function execute(params) {
+  const query = encodeURIComponent(params.query);
+  const url = `https://en.wikipedia.org/api/rest_v1/page/summary/${query}`;
+  const res = await fetch(url);
+  const data = await res.json();
+  return {
+    title: data.title,
+    summary: data.extract,
+    url: data.content_urls?.desktop?.page
+  };
+}
+```
+
+## Tool Schema
+```json
+{
+  "name": "wikipedia_lookup",
+  "description": "Look up a topic on Wikipedia and return a summary",
+  "parameters": {
+    "query": { "type": "string", "description": "The topic to search" }
+  }
+}
+```
+```
+
+### Skill Manager — `SkillManager.kt`
+
+```kotlin
+@Singleton
+class SkillManager @Inject constructor(
+    private val skillLoader: SkillLoader,
+    private val skillExecutor: SkillExecutor,
+    private val skillRepository: SkillRepository
+) {
+    private val activeSkills = mutableMapOf<String, Skill>()
+
+    suspend fun loadFromUrl(url: String): Result<Skill>
+    suspend fun loadFromFile(uri: Uri): Result<Skill>
+    suspend fun loadBuiltIn(skillName: String): Result<Skill>
+    fun activate(skillName: String)
+    fun deactivate(skillName: String)
+    fun getActiveSkillsPrompt(): String // Returns skill descriptions for system prompt
+    suspend fun executeSkill(name: String, params: Map<String, Any>): Any
+    fun listAvailable(): List<Skill>
+}
+```
+
+### Skill Executor — `SkillExecutor.kt`
+
+```kotlin
+/**
+ * Runs JavaScript skills in a hidden WebView sandbox.
+ * The WebView has:
+ *   - Network access (fetch API)
+ *   - JavaScript interface bridge to Android
+ *   - CDN library loading (lodash, etc.)
+ *   - No DOM rendering (headless)
+ */
+class SkillExecutor @Inject constructor(
+    private val context: Context
+) {
+    private lateinit var webView: WebView
+    private val pendingResults = mutableMapOf>()
+
+    fun initialize() {
+        webView = WebView(context).apply {
+            settings.javaScriptEnabled = true
+            settings.domStorageEnabled = true
+            addJavascriptInterface(SkillBridge(), "Android")
+        }
+    }
+
+    suspend fun execute(script: String, params: String): String {
+        val callId = UUID.randomUUID().toString()
+        val deferred = CompletableDeferred()
+        pendingResults[callId] = deferred
+
+        val js = """
+            (async function() {
+                try {
+                    $script
+                    const result = await execute($params);
+                    Android.onResult('$callId', JSON.stringify(result));
+                } catch(e) {
+                    Android.onError('$callId', e.message);
+                }
+            })();
+        """.trimIndent()
+
+        withContext(Dispatchers.Main) {
+            webView.evaluateJavascript(js, null)
+        }
+
+        return deferred.await()
+    }
+}
+```
+
+---
+
+## 🧬 MEMORY & LEARNING SYSTEM
+
+### Memory Architecture
+
+```
+SHORT-TERM MEMORY (in-session)
+    ↓ Persisted after session ends
+LONG-TERM MEMORY (SQLite + vector embeddings)
+    ↓ Retrieved via similarity search
+WORKING MEMORY (injected into system prompt each run)
+```
+
+### Memory Store — `MemoryStore.kt`
+
+```kotlin
+/**
+ * SQLite + vector embeddings for RAG-based memory retrieval.
+ * Each memory entry has:
+ *   - id, content, embedding (FloatArray), timestamp
+ *   - tags: [task_type, app, tool_used, outcome: success/failure]
+ *   - access_count (frequently used memories ranked higher)
+ *
+ * Retrieval: cosine similarity between query embedding and stored embeddings
+ */
+@Entity(tableName = "memories")
+data class MemoryEntity(
+    @PrimaryKey val id: String,
+    val content: String,
+    val embeddingJson: String,    // FloatArray serialized as JSON
+    val tags: String,
+    val timestamp: Long,
+    val accessCount: Int = 0,
+    val outcomeSuccess: Boolean = true
+)
+```
+
+### Learning Engine — `LearningEngine.kt`
+
+```kotlin
+/**
+ * THE LEARNING SYSTEM — This is what makes DroidAgent smarter over time.
+ *
+ * After each completed task, LearningEngine:
+ * 1. Analyzes the action log (what worked, what failed)
+ * 2. Extracts reusable "strategies" (e.g., "to send WhatsApp: open app → search contact → tap message → type → send")
+ * 3. Saves strategies as structured memories with embeddings
+ * 4. Updates "failure patterns" to avoid repeating mistakes
+ * 5. Scores itself (self-evaluation) based on:
+ *    - Steps taken vs minimum possible
+ *    - Number of retries needed
+ *    - User feedback (thumbs up/down)
+ * 6. Adjusts strategy weights for future retrieval ranking
+ *
+ * This creates a SELF-IMPROVING agent that learns device-specific patterns.
+ */
+@Singleton
+class LearningEngine @Inject constructor(
+    private val llmEngine: LLMEngine,
+    private val memoryStore: MemoryStore,
+    private val embeddingEngine: EmbeddingEngine
+) {
+    suspend fun learnFromSession(session: AgentSession) {
+        // 1. Summarize what was done
+        val summary = summarizeSession(session)
+
+        // 2. Extract learnable patterns
+        val patterns = extractPatterns(session.steps)
+
+        // 3. Self-evaluate
+        val score = evaluateSession(session)
+
+        // 4. Store as memories with embeddings
+        patterns.forEach { pattern ->
+            val embedding = embeddingEngine.embed(pattern.description)
+            memoryStore.save(Memory(
+                content = pattern.toPromptString(),
+                embedding = embedding,
+                tags = listOf(pattern.type, session.goal_category),
+                outcomeSuccess = score > 0.5f
+            ))
+        }
+
+        // 5. Update failure blacklist
+        session.failedActions.forEach { action ->
+            memoryStore.saveFailurePattern(action)
+        }
+    }
+
+    private suspend fun extractPatterns(steps: List): List {
+        val stepsJson = steps.joinToString("\n") { it.toJson() }
+        val prompt = """
+            Analyze these agent steps and extract reusable patterns.
+            Return JSON array of patterns with: type, description, trigger_condition, action_sequence.
+            
+            Steps:
+            $stepsJson
+        """.trimIndent()
+
+        val result = llmEngine.generate("You are an AI learning system.", listOf(Message.User(prompt)))
+        return parsePatterns(result)
+    }
+}
+```
+
+### Embedding Engine — `EmbeddingEngine.kt`
+
+```kotlin
+/**
+ * On-device text embedding using MediaPipe Universal Sentence Encoder or MiniLM.
+ * Produces 384-dim or 512-dim dense vectors for semantic similarity.
+ */
+@Singleton
+class EmbeddingEngine @Inject constructor(private val context: Context) {
+    private var textEmbedder: TextEmbedder? = null
+
+    fun initialize() {
+        val options = TextEmbedder.TextEmbedderOptions.builder()
+            .setBaseOptions(BaseOptions.builder()
+                .setModelAssetPath("universal_sentence_encoder.tflite")
+                .build())
+            .build()
+        textEmbedder = TextEmbedder.createFromOptions(context, options)
+    }
+
+    fun embed(text: String): FloatArray =
+        textEmbedder!!.embed(text).embeddings.first().floatEmbedding()!!
+
+    fun cosineSimilarity(a: FloatArray, b: FloatArray): Float {
+        val dot = a.zip(b).sumOf { (x, y) -> (x * y).toDouble() }
+        val normA = sqrt(a.sumOf { (it * it).toDouble() })
+        val normB = sqrt(b.sumOf { (it * it).toDouble() })
+        return (dot / (normA * normB)).toFloat()
+    }
+}
+```
+
+---
+
+## 🎨 UI SPECIFICATION
+
+### Color System — `Colors.kt`
+
+```kotlin
+object DroidColors {
+    // Backgrounds
+    val Background = Color(0xFF050810)          // Deep space black
+    val Surface = Color(0xFF0D1117)             // GitHub dark
+    val SurfaceVariant = Color(0xFF161B22)
+    val CardBg = Color(0xFF0F1923)
+
+    // Agent state colors
+    val Thinking = Color(0xFF7C3AED)            // Purple — brain active
+    val Acting = Color(0xFF0EA5E9)              // Cyan — executing
+    val Observing = Color(0xFF10B981)           // Green — reading
+    val Error = Color(0xFFEF4444)               // Red — failed
+    val Done = Color(0xFF22C55E)                // Bright green — complete
+
+    // Accents
+    val PrimaryGlow = Color(0xFF6366F1)         // Indigo glow
+    val SecondaryGlow = Color(0xFF06B6D4)       // Cyan glow
+    val TextPrimary = Color(0xFFE2E8F0)
+    val TextSecondary = Color(0xFF64748B)
+    val TextCode = Color(0xFF7DD3FC)            // Light blue for code/JSON
+    val Border = Color(0xFF1E293B)
+    val GlowAlpha = Color(0x337C3AED)
+}
+```
+
+### Home Screen — `HomeScreen.kt`
+
+```
+┌─────────────────────────────────────────┐
+│  ⬡ DROID AGENT              [●] ONLINE  │
+│                                          │
+│  ┌─────────────────────────────────────┐ │
+│  │  🧠 Give me a task...               │ │
+│  │  [microphone icon] [send icon]      │ │
+│  └─────────────────────────────────────┘ │
+│                                          │
+│  QUICK TASKS                            │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ │
+│  │ 📱 Open  │ │ 🔍 Search│ │ 📅 Check │ │
+│  │  App     │ │   Web    │ │ Calendar │ │
+│  └──────────┘ └──────────┘ └──────────┘ │
+│                                          │
+│  AGENT STATUS                           │
+│  ● On-device: Gemma 4 E2B (LiteRT)     │
+│  ● Memory: 247 learned patterns         │
+│  ● Skills: 8 active                     │
+│  ● Sessions: 142 completed              │
+│                                          │
+│  RECENT SESSIONS                        │
+│  ✓ "Send WhatsApp to Raj about meeting" │
+│  ✓ "Set alarm for 6am tomorrow"         │
+│  ✗ "Book Ola cab" (permission denied)   │
+│                                          │
+│  [🤖 AGENT] [💬 CHAT] [🧩 SKILLS]      │
+│  [🧠 MEMORY] [📦 MODELS] [⚙️ SETTINGS] │
+└─────────────────────────────────────────┘
+```
+
+### Agent Execution Screen — `AgentScreen.kt`
+
+```
+┌─────────────────────────────────────────┐
+│  ◀  AGENT RUNNING        [⏸] [⏹]       │
+│                                          │
+│  Goal: "Open YouTube and search for     │
+│  Mahavatar Babaji chants"               │
+│                                          │
+│  ┌─── AGENT MIND ─────────────────────┐ │
+│  │                                    │ │
+│  │  💜 [THINKING]                     │ │
+│  │  "I need to first launch YouTube,  │ │
+│  │   then use search function..."     │ │
+│  │                                    │ │
+│  └────────────────────────────────────┘ │
+│                                          │
+│  ACTION LOG ───────────────────────────  │
+│                                          │
+│  ✅ Step 1: Launch app                   │
+│     → app_launcher({"app": "YouTube"})  │
+│     ← "YouTube opened successfully"     │
+│                                          │
+│  🔵 Step 2: Tap search bar [ACTING...]  │
+│     → device_control({"action":"tap",  │
+│       "target": "Search"})              │
+│                                          │
+│  ░░░░░░░░░░░░░░░░ streaming...          │
+│                                          │
+│  Progress: Step 2 of ~5                 │
+│  Engine: LiteRT (Gemma 4 E2B) — 28t/s  │
+└─────────────────────────────────────────┘
+```
+
+### Animated Agent Avatar Component — `CircularAgentAvatar.kt`
+
+```kotlin
+/**
+ * Pulsing circular avatar that shows agent state visually.
+ * - IDLE: Steady dim glow, slow breathing animation
+ * - THINKING: Purple pulsing rings radiating outward
+ * - ACTING: Cyan spinning arc around circle
+ * - OBSERVING: Green scanning line effect
+ * - DONE: Bright green checkmark burst animation
+ * - ERROR: Red shake + cross symbol
+ *
+ * Implemented with Canvas + Compose Animation APIs.
+ * Uses InfiniteTransition for continuous animations.
+ */
+@Composable
+fun CircularAgentAvatar(state: AgentState, modifier: Modifier = Modifier) {
+    val infiniteTransition = rememberInfiniteTransition()
+    // ... full Canvas-based animated implementation
+}
+```
+
+---
+
+## 📦 MODEL MANAGEMENT
+
+### Supported Models — `ModelRegistry.kt`
+
+```kotlin
+val SUPPORTED_MODELS = listOf(
+    ModelInfo(
+        id = "gemma-4-e2b-it",
+        displayName = "Gemma 4 E2B (Recommended)",
+        description = "2B parameter on-device model. Best for most tasks.",
+        sizeGB = 1.3f,
+        tokensPerSec = 25f,
+        ramRequiredGB = 1.5f,
+        downloadUrl = "https://huggingface.co/google/gemma-4-e2b-it-litert-preview/resolve/main/gemma4-e2b-it-int4.task",
+        engine = "litert",
+        contextLength = 8192
+    ),
+    ModelInfo(
+        id = "gemma-4-e4b-it",
+        displayName = "Gemma 4 E4B (High Quality)",
+        description = "4B parameter model for complex reasoning tasks.",
+        sizeGB = 2.6f,
+        tokensPerSec = 14f,
+        ramRequiredGB = 3.0f,
+        downloadUrl = "https://huggingface.co/google/gemma-4-e4b-it-litert-preview/resolve/main/gemma4-e4b-it-int4.task",
+        engine = "litert",
+        contextLength = 8192
+    ),
+    ModelInfo(
+        id = "ollama-llama3.2",
+        displayName = "Llama 3.2 (via Ollama)",
+        description = "Requires Ollama running on local network. More powerful.",
+        engine = "ollama",
+        contextLength = 16384
+    ),
+    ModelInfo(
+        id = "gemini-2.0-flash",
+        displayName = "Gemini 2.0 Flash (Cloud)",
+        description = "Cloud model. Requires internet + API key. Highest capability.",
+        engine = "gemini",
+        contextLength = 1000000
+    )
+)
+```
+
+### Model Downloader — `ModelDownloader.kt`
+
+```kotlin
+/**
+ * Downloads models from HuggingFace with:
+ *   - Resume support (Range header)
+ *   - SHA256 verification
+ *   - Progress Flow emission
+ *   - Pause/cancel support
+ *   - Storage space check before download
+ */
+class ModelDownloader @Inject constructor(
+    private val okHttpClient: OkHttpClient,
+    private val context: Context
+) {
+    fun download(model: ModelInfo): Flow = flow {
+        // Check storage
+        val available = context.getExternalFilesDir(null)?.freeSpace ?: 0
+        if (available < model.sizeGB * 1024 * 1024 * 1024) {
+            throw InsufficientStorageException()
+        }
+        // Download with progress emission
+        val destFile = File(context.getExternalFilesDir("models"), "${model.id}.task")
+        // ... streaming download with emit(DownloadProgress(bytesDownloaded, totalBytes))
+    }
+}
+```
+
+---
+
+## ⚙️ SETTINGS SCREEN
+
+Settings should include:
+
+```
+INFERENCE ENGINE
+  ● Auto (recommended)
+  ○ LiteRT-LM (on-device only)
+  ○ Ollama (local network)
+  ○ Gemini API (cloud)
+
+LLM PARAMETERS
+  Temperature: [slider 0.0 → 1.0] default 0.7
+  Max tokens: [slider 512 → 4096] default 2048
+  Top-K: [input] default 40
+
+OLLAMA SERVER
+  URL: [text field] e.g. http://192.168.1.5:11434
+  Model: [dropdown of detected models]
+  [Test Connection]
+
+GEMINI API
+  API Key: [password field]
+  Model: gemini-2.0-flash / gemini-2.5-pro
+
+AGENT BEHAVIOR
+  Max steps per task: [slider 5-50]
+  Confirmation for destructive actions: [toggle ON]
+  Learning enabled: [toggle ON]
+  Memory retention: 30 / 90 / 365 days / Forever
+
+ACCESSIBILITY SERVICE
+  Status: [Enabled / Disabled]
+  [Open Accessibility Settings]
+
+PERMISSIONS
+  [View and manage all granted permissions]
+
+PRIVACY
+  All inference is on-device (when using LiteRT)
+  Memory data never leaves device
+  [Clear all memories] [Export memories]
+
+DEBUG
+  Show token count: [toggle]
+  Show engine used: [toggle]
+  Verbose action logging: [toggle]
+  [View full session logs]
+```
+
+---
+
+## 🔒 ACCESSIBILITY SERVICE CONFIGURATION
+
+### `res/xml/accessibility_service_config.xml`
+
+```xml
+
+
+```
+
+---
+
+## 🔄 AGENT FOREGROUND SERVICE
+
+```kotlin
+/**
+ * Keeps agent alive while executing multi-step tasks.
+ * Shows persistent notification with:
+ *   - Current task description
+ *   - Step progress (Step 3 of 8)
+ *   - Current action (e.g., "Opening YouTube...")
+ *   - [Pause] [Stop] actions in notification
+ *
+ * Runs in its own coroutine scope on Dispatchers.Default.
+ */
+@AndroidEntryPoint
+class AgentForegroundService : Service() {
+    @Inject lateinit var agentOrchestrator: AgentOrchestrator
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val goal = intent?.getStringExtra("goal") ?: return START_NOT_STICKY
+        showNotification("Starting...", goal)
+
+        serviceScope.launch {
+            agentOrchestrator.agentState.collect { state ->
+                updateNotification(state)
+            }
+        }
+
+        serviceScope.launch {
+            agentOrchestrator.executeGoal(goal)
+        }
+
+        return START_STICKY
+    }
+}
+```
+
+---
+
+## 🏗️ DEPENDENCY INJECTION (Hilt)
+
+### `AppModule.kt`
+
+```kotlin
+@Module
+@InstallIn(SingletonComponent::class)
+object AppModule {
+    @Provides @Singleton
+    fun provideOkHttpClient(): OkHttpClient = OkHttpClient.Builder()
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
+        .addInterceptor(HttpLoggingInterceptor())
+        .build()
+
+    @Provides @Singleton
+    fun provideKtorClient(): HttpClient = HttpClient(Android) {
+        install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
+    }
+
+    @Provides @Singleton
+    fun provideMoshi(): Moshi = Moshi.Builder().add(KotlinJsonAdapterFactory()).build()
+}
+```
+
+---
+
+## 📋 BUILT-IN AGENT SKILLS (to implement)
+
+| Skill | Description | Execution |
+|-------|-------------|-----------|
+| `wikipedia` | Search Wikipedia for facts | JavaScript (fetch) |
+| `calculator` | Evaluate math expressions | JavaScript (eval) |
+| `web_search` | DuckDuckGo instant answers | JavaScript (fetch) |
+| `weather` | Current weather via Open-Meteo API | JavaScript |
+| `translator` | Translate text via LibreTranslate | JavaScript |
+| `qr_generator` | Generate QR codes | Native (Android ZXing) |
+| `reminder` | Set Android alarms/reminders | Native (AlarmManager) |
+| `whatsapp_send` | Send WhatsApp message via a11y | Native (Accessibility) |
+| `phone_call` | Initiate phone call | Native (Intent) |
+| `battery_status` | Get battery level/status | Native |
+| `file_search` | Find files on device | Native |
+| `image_analysis` | Describe image using vision model | Native (ML Kit / LiteRT vision) |
+
+---
+
+## 🚦 ONBOARDING FLOW
+
+When the app launches for the first time:
+
+```
+Screen 1: Welcome
+  "Meet DroidAgent — Your AI that controls your phone"
+  [Animated agent avatar with glowing effects]
+  [Get Started →]
+
+Screen 2: Choose Model
+  "Select your inference mode"
+  • Gemma 4 E2B — Download 1.3 GB, works offline [RECOMMENDED]
+  • Ollama — Connect to local server
+  • Gemini API — Enter API key
+  [Download & Continue →]
+
+Screen 3: Grant Permissions
+  [Required]  ✓ Accessibility Service — "Controls the screen"
+  [Required]  ✓ Overlay Permission — "Shows status overlay"
+  [Optional]  Contacts, Calendar, SMS
+  [Grant Permissions →]
+
+Screen 4: First Task
+  "Try your first task:"
+  [Open YouTube] [Check Weather] [Send WhatsApp]
+  [Or type your own...]
+```
+
+---
+
+## 📊 AGENT MEMORY SCREEN
+
+Shows the agent's learned experience database:
+
+```
+🧠 AGENT MEMORY             [Search memories...]
+
+STATISTICS
+  Total patterns: 247
+  Success rate: 94.3%
+  Favorite apps: YouTube, WhatsApp, Chrome
+  Most used tools: device_control, app_launcher
+
+LEARNED PATTERNS
+  ┌────────────────────────────────────────┐
+  │ 🟢 WhatsApp message sending           │
+  │ Steps: Open → Search contact →        │
+  │ Tap chat → Type → Send button         │
+  │ Used 34 times · 100% success          │
+  └────────────────────────────────────────┘
+
+  ┌────────────────────────────────────────┐
+  │ 🟡 YouTube search                     │
+  │ Steps: Launch → Tap search →          │
+  │ Type query → Select result            │
+  │ Used 18 times · 88% success           │
+  └────────────────────────────────────────┘
+
+FAILURE PATTERNS (avoided)
+  ✗ Trying to tap YouTube logo (use search icon instead)
+  ✗ Using "Send" text in WhatsApp (use arrow button at bottom-right)
+```
+
+---
+
+## 🎯 IMPLEMENTATION PHASES FOR JULES
+
+### Phase 1 — Foundation (Build First)
+1. Project setup, Hilt DI, Room database, navigation
+2. Basic UI: HomeScreen, color system, typography
+3. `LiteRTEngine` — model download + basic text generation
+4. `OllamaEngine` — connect to local Ollama
+5. `EngineRouter` — auto-select engine
+6. Settings screen with engine configuration
+7. Model management screen (download, load, benchmark)
+
+### Phase 2 — Agent Core
+8. `AgentOrchestrator` — ReAct loop
+9. `AgentState` sealed class + StateFlow
+10. `ToolRegistry` + `ToolAnnotations`
+11. `ToolExecutor` — parse JSON → execute tool
+12. `AppLauncherTool` — launch apps by name
+13. `WebSearchTool` — DuckDuckGo
+14. AgentScreen UI — live execution view with thought bubbles
+15. `StreamingTextDisplay` composable
+
+### Phase 3 — Device Control
+16. `DroidAccessibilityService` — register and connect
+17. `GestureEngine` — tap, swipe, scroll, type
+18. `UITreeParser` — parse accessibility node tree to JSON
+19. `ScreenReader` — extract visible text
+20. `AccessibilityTool` — full device control tool
+21. `ScreenCaptureTool` + ML Kit OCR integration
+22. `ActionDispatcher` — safe action queuing
+23. Agent permission request flow in UI
+
+### Phase 4 — Memory & Learning
+24. `EmbeddingEngine` — MediaPipe USE embeddings
+25. `MemoryStore` — Room + vector storage
+26. `MemoryRetriever` — cosine similarity search
+27. `ExperienceLogger` — log all agent steps
+28. `LearningEngine` — pattern extraction + storage
+29. Memory screen UI
+30. System prompt injection of relevant memories
+
+### Phase 5 — Skill System
+31. `SkillParser` — parse SKILL.md format
+32. `SkillExecutor` — WebView JS sandbox
+33. `SkillManager` — load/activate/deactivate
+34. `SkillLoader` — from file, URL, built-in
+35. Built-in skills: Wikipedia, Calculator, Web Search, Weather
+36. Skills marketplace screen UI
+37. Native skills: WhatsApp, Reminder, QR Generator
+
+### Phase 6 — Polish
+38. `AgentPlanner` — break complex goals into subtasks
+39. Onboarding flow (3-screen setup)
+40. `AgentForegroundService` — background execution + notification
+41. Voice input via SpeechRecognizer
+42. Export/import agent sessions
+43. Benchmark mode (measure tokens/sec for each engine)
+44. Deep link support: `droidagent://task?goal=...`
+
+---
+
+## 🔑 KEY IMPLEMENTATION NOTES FOR JULES
+
+1. **LiteRT-LM dependency**: Use `com.google.ai.edge.litert:litert-lm:0.1.0-beta` — check Maven Central for latest. May need to add Google's Maven repo.
+
+2. **Accessibility Service**: The service must be declared in manifest AND the user must manually enable it in Android Settings → Accessibility. Show a deep-link button to the settings page.
+
+3. **Gesture execution**: All `AccessibilityService.dispatchGesture()` calls must happen on the main thread. Use `Handler(Looper.getMainLooper())` for reliable gesture dispatch.
+
+4. **Context window management**: At 8192 token limit, trim old conversation turns keeping: system prompt (fixed) + last 3 user/assistant pairs + latest observation.
+
+5. **Screen reading strategy**: Prefer `UITreeParser` (structured, reliable) over OCR. Fall back to `ScreenCaptureTool` OCR when app doesn't expose accessibility nodes (games, some e-commerce apps).
+
+6. **Model storage path**: Store `.task` model files in `context.getExternalFilesDir("models")` to avoid APK size limits and allow large file storage.
+
+7. **Coroutine scopes**: Agent runs on `Dispatchers.Default`. UI updates collect on `Dispatchers.Main`. Gestures dispatch on main thread via Handler.
+
+8. **Tool output limit**: Truncate tool results to 2000 characters before feeding back to LLM to prevent context overflow.
+
+9. **ReAct output parsing**: Use regex to extract `<thought>...</thought>` and `<action>...</action>` blocks. Handle cases where LLM outputs markdown code fences around JSON.
+
+10. **Safety rails**: Before executing ANY file deletion, app uninstall, or SMS/call action, show a confirmation dialog to user via overlay.
+
+---
+
+## 📱 APP ICON & BRANDING
+
+- App name: **DroidAgent**
+- Package: `com.mahavtaar.droidagent`
+- Icon: Hexagonal robot face with glowing cyan eyes, dark background
+- Color: Deep navy + indigo + cyan glow
+- Font: JetBrains Mono (code/agent output) + Inter (UI text)
+- Tagline: *"Your phone. Your agent. Your rules."*
+
+---
+
+## 🧪 TESTING
+
+```kotlin
+// AgentOrchestratorTest.kt
+// Test ReAct loop with mock LLM responses
+// Verify tool calls are parsed correctly from LLM output
+// Test max steps termination
+// Test learning from completed sessions
+
+// AccessibilityToolTest.kt (requires Espresso)
+// Test gesture dispatch on real device
+// Test UI tree parsing for common apps
+
+// MemoryStoreTest.kt
+// Test embedding storage and retrieval
+// Test cosine similarity ranking
+// Test memory expiration
+```
+
+---
+
+## 📄 REFERENCE
+
+- **Google AI Edge Gallery source**: https://github.com/google-ai-edge/gallery
+- **LiteRT-LM docs**: https://ai.google.dev/edge/litert-lm/overview
+- **Gemma 4 models**: https://huggingface.co/google/gemma-4-e2b-it-litert-preview
+- **MediaPipe Tasks**: https://ai.google.dev/edge/mediapipe/solutions/text/text_embedder/android
+- **Ollama API**: https://github.com/ollama/ollama/blob/main/docs/api.md
+- **Android Accessibility**: https://developer.android.com/guide/topics/ui/accessibility/service
+- **ReAct paper**: https://arxiv.org/abs/2210.03629
+
+---
+
+*Built by Mahavtaar Enterprises | Package: com.mahavtaar.droidagent*
+*Specification version: 1.0.0 | Generated for Google Jules*
