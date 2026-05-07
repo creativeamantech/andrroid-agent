@@ -1,0 +1,6 @@
+.gradle/
+build/
+app/build/
+local.properties
+!droidagent-arm64-v8a.apk
+!droidagent-armeabi-v7a.apk
