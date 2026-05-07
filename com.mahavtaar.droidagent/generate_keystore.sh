@@ -1,0 +1,1 @@
+keytool -genkey -v -keystore release.jks -alias droidagent_key -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=DroidAgent, OU=Mahavtaar, O=Mahavtaar, L=City, ST=State, C=US" -storepass droidagent123 -keypass droidagent123
