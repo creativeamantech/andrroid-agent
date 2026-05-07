@@ -10,6 +10,16 @@ plugins {
 android {
     namespace = "com.mahavtaar.droidagent"
     compileSdk = 35
+
+    signingConfigs {
+        create("release") {
+            storeFile = file("../release.jks")
+            storePassword = "droidagent123"
+            keyAlias = "droidagent_key"
+            keyPassword = "droidagent123"
+        }
+    }
+
     defaultConfig {
         applicationId = "com.mahavtaar.droidagent"
         minSdk = 28
@@ -19,10 +29,24 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
     }
+
+    buildFeatures { compose = true }
+
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "armeabi-v7a", "x86_64")
+            isUniversalApk = false
+        }
+    }
+
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfig = signingConfigs.getByName("release")
         }
     }
     compileOptions {
@@ -30,8 +54,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_11
     }
     kotlinOptions { jvmTarget = "11" }
-    buildFeatures { compose = true }
-    splits { abi { isEnable = true; reset(); include("arm64-v8a", "armeabi-v7a", "x86_64"); isUniversalApk = false } }
     packaging { resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" } }
 }
 
@@ -50,7 +72,6 @@ dependencies {
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)
     ksp(libs.room.compiler)
-    // implementation(libs.litert.lm) // Disabled due to beta dependency issue
     implementation(libs.litert.gpu)
     implementation(libs.litert.support)
     implementation(libs.mediapipe.tasks.text)
@@ -75,6 +96,8 @@ dependencies {
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.mockito:mockito-core:5.3.1")
+    testImplementation("org.mockito.kotlin:mockito-kotlin:5.0.0")
+    testImplementation("org.mockito:mockito-inline:5.2.0")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
     androidTestImplementation(platform(libs.compose.bom))
